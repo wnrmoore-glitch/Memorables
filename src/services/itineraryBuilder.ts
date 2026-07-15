@@ -9,6 +9,7 @@ import type {
   ItineraryStop,
   LatLng,
   StopCategory,
+  TravelMode,
   TravelSegment,
   Venue,
 } from '../types/domain'
@@ -19,14 +20,31 @@ export interface BuildResult {
 }
 
 const WINDOW_OVERRUN_GRACE_MIN = 30
-/** Rating points "spent" per km of distance from the previous stop, when ranking candidates. */
-const PROXIMITY_PENALTY_PER_KM = 0.15
+/**
+ * Rating points "spent" per km of distance from the previous stop, when
+ * ranking candidates. Walking is punished hardest - a 5-star venue an hour's
+ * walk away is a worse pick than a 4.3 ten minutes away.
+ */
+const PROXIMITY_PENALTY_PER_KM: Record<TravelMode, number> = {
+  walking: 0.6,
+  transit: 0.25,
+  driving: 0.1,
+}
 /** Small nudge so different itinerary options don't all reuse the same handful of venues. */
 const DIVERSITY_BONUS = 0.2
 /** Don't ask someone to wait around more than this long for a venue to open. */
 const MAX_WAIT_FOR_OPENING_MIN = 150
 /** Waits longer than this are worth calling out so the plan doesn't look like it has a gap. */
 const NOTABLE_WAIT_MIN = 20
+/**
+ * Venue search radius per travel mode - on foot, "nearby" means something
+ * very different than behind the wheel.
+ */
+const SEARCH_RADIUS_KM: Record<TravelMode, number> = {
+  walking: 2,
+  transit: 5,
+  driving: 10,
+}
 
 async function candidatesByCategory(
   request: ItineraryRequest,
@@ -34,7 +52,7 @@ async function candidatesByCategory(
 ): Promise<{ byCategory: Map<StopCategory, Venue[]>; usedLiveData: boolean }> {
   const unique = Array.from(new Set(categories))
   const byCategory = new Map<StopCategory, Venue[]>()
-  let usedLiveData = true
+  const liveByCategory = new Map<StopCategory, boolean>()
 
   await Promise.all(
     unique.map(async (category) => {
@@ -42,24 +60,36 @@ async function candidatesByCategory(
         center: request.location,
         locationLabel: request.location.label,
         category,
+        radiusKm: SEARCH_RADIUS_KM[request.travelMode],
       })
-      if (!result.usedLiveData) usedLiveData = false
+      liveByCategory.set(category, result.usedLiveData)
       byCategory.set(category, result.venues)
     })
   )
 
-  return { byCategory, usedLiveData }
+  // Never mix real and demo venues in one itinerary: if any category came back
+  // with live data, discard demo results for the categories that fell back -
+  // an empty slot (with its warning) beats sending someone to a venue that
+  // doesn't exist.
+  const anyLive = [...liveByCategory.values()].some(Boolean)
+  if (anyLive) {
+    for (const [category, isLive] of liveByCategory) {
+      if (!isLive) byCategory.set(category, [])
+    }
+  }
+
+  return { byCategory, usedLiveData: anyLive }
 }
 
 /** Ranks candidates by a blend of rating and closeness to where the previous stop left off. */
-function rankCandidates(candidates: Venue[], currentLocation: LatLng, usedInOtherOptions: Set<string>): Venue[] {
-  return [...candidates].sort((a, b) => scoreCandidate(b, currentLocation, usedInOtherOptions) - scoreCandidate(a, currentLocation, usedInOtherOptions))
+function rankCandidates(candidates: Venue[], currentLocation: LatLng, mode: TravelMode, usedInOtherOptions: Set<string>): Venue[] {
+  return [...candidates].sort((a, b) => scoreCandidate(b, currentLocation, mode, usedInOtherOptions) - scoreCandidate(a, currentLocation, mode, usedInOtherOptions))
 }
 
-function scoreCandidate(venue: Venue, currentLocation: LatLng, usedInOtherOptions: Set<string>): number {
+function scoreCandidate(venue: Venue, currentLocation: LatLng, mode: TravelMode, usedInOtherOptions: Set<string>): number {
   const distanceKm = haversineKm(currentLocation, venue.location)
   const diversityBonus = usedInOtherOptions.has(venue.id) ? 0 : DIVERSITY_BONUS
-  return venue.rating - distanceKm * PROXIMITY_PENALTY_PER_KM + diversityBonus
+  return venue.rating - distanceKm * PROXIMITY_PENALTY_PER_KM[mode] + diversityBonus
 }
 
 interface ChainStepResult {
@@ -83,7 +113,7 @@ async function pickStep(
   const pool = candidates.filter((v) => !usedVenueIds.has(v.id))
   if (pool.length === 0) return null
 
-  const ranked = rankCandidates(pool, currentLocation, usedInOtherOptions)
+  const ranked = rankCandidates(pool, currentLocation, request.travelMode, usedInOtherOptions)
 
   let bestFallback: { venue: Venue; travel: TravelSegment; arrival: Date; departure: Date; warning: string } | null = null
 
@@ -235,7 +265,7 @@ export async function buildItineraryOptions(request: ItineraryRequest, optionCou
 
   const { byCategory, usedLiveData } = await candidatesByCategory(request, sequence)
 
-  const firstCategoryVenues = rankCandidates(byCategory.get(sequence[0]) ?? [], request.location, new Set())
+  const firstCategoryVenues = rankCandidates(byCategory.get(sequence[0]) ?? [], request.location, request.travelMode, new Set())
   const usedInOtherOptions = new Set<string>()
   const options: ItineraryOption[] = []
   const seenChainKeys = new Set<string>()

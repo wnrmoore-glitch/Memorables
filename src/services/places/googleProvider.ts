@@ -3,8 +3,7 @@ import type { OpeningPeriod, Venue } from '../../types/domain'
 import type { PlacesProvider, SearchVenuesParams } from './types'
 
 /**
- * Places API (New) `includedType` values per stop category. Fine dining and
- * casual food both search "restaurant" - they're told apart afterwards by price level.
+ * Places API (New) `includedType` values per stop category.
  * https://developers.google.com/maps/documentation/places/web-service/place-types
  */
 const CATEGORY_TYPES: Record<string, string[]> = {
@@ -12,7 +11,7 @@ const CATEGORY_TYPES: Record<string, string[]> = {
   culture: ['museum', 'art_gallery'],
   entertainment: ['performing_arts_theater', 'movie_theater', 'night_club'],
   'food-casual': ['restaurant'],
-  'food-fine-dining': ['restaurant'],
+  'food-fine-dining': ['fine_dining_restaurant'],
   coffee: ['cafe'],
   dessert: ['dessert_shop', 'bakery'],
   'drinks-bar': ['bar', 'wine_bar'],
@@ -150,7 +149,8 @@ export const googlePlacesProvider: PlacesProvider = {
       .map((place) => toVenue(place, category))
       .filter((v): v is Venue => v !== null)
 
-    if (category === 'food-fine-dining') return venues.filter((v) => v.priceLevel >= 3)
+    // The fine_dining_restaurant place type is signal enough for fine dining;
+    // just keep the casual bucket from surfacing $$$$ spots.
     if (category === 'food-casual') return venues.filter((v) => v.priceLevel <= 2)
     return venues
   },

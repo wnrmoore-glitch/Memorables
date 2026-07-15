@@ -11,9 +11,13 @@ export interface VenueSearchResult {
 }
 
 /**
- * Tries the live Google Places provider when an API key is configured, and
- * silently falls back to demo data if the live call fails (bad key, quota,
- * network/CORS) so the app never hard-blocks on an external dependency.
+ * In live mode, real venues and demo venues must never mix - a fake venue in
+ * an otherwise-real itinerary would send someone to a place that doesn't
+ * exist. So:
+ *  - a live search with zero results retries with a wider radius, then
+ *    returns empty (the itinerary builder surfaces a "nothing found" warning)
+ *  - only a hard failure of the live call itself (bad key, quota, network)
+ *    falls back to demo data, and reports that it did
  */
 export async function searchVenues(params: SearchVenuesParams): Promise<VenueSearchResult> {
   if (!hasLiveDataSource) {
@@ -22,8 +26,10 @@ export async function searchVenues(params: SearchVenuesParams): Promise<VenueSea
   }
 
   try {
-    const venues = await googlePlacesProvider.searchVenues(params)
-    if (venues.length === 0) throw new Error('No live results')
+    let venues = await googlePlacesProvider.searchVenues(params)
+    if (venues.length === 0) {
+      venues = await googlePlacesProvider.searchVenues({ ...params, radiusKm: (params.radiusKm ?? 4) * 3 })
+    }
     return { venues, usedLiveData: true }
   } catch (err) {
     const venues = await mockPlacesProvider.searchVenues(params)
