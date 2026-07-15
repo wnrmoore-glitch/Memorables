@@ -36,9 +36,24 @@ const ALWAYS_OPEN: OpeningPeriod[] = Array.from({ length: 7 }, (_, day) => ({
   close: '23:59',
 }))
 
+/**
+ * Places whose type list contains any of these are never date-material, even
+ * when they technically match an included type (e.g. a supermarket with an
+ * in-store bakery matches "bakery").
+ */
+const EXCLUDED_PLACE_TYPES = new Set([
+  'grocery_store',
+  'supermarket',
+  'convenience_store',
+  'gas_station',
+  'shopping_mall',
+  'department_store',
+])
+
 interface GooglePlace {
   id: string
   displayName?: { text: string }
+  types?: string[]
   rating?: number
   userRatingCount?: number
   priceLevel?: string
@@ -68,6 +83,7 @@ function toOpeningHours(place: GooglePlace): OpeningPeriod[] {
 
 function toVenue(place: GooglePlace, category: SearchVenuesParams['category']): Venue | null {
   if (!place.location || !place.displayName) return null
+  if (place.types?.some((t) => EXCLUDED_PLACE_TYPES.has(t))) return null
   return {
     id: `google-${place.id}`,
     name: place.displayName.text,
@@ -87,6 +103,7 @@ function toVenue(place: GooglePlace, category: SearchVenuesParams['category']): 
 const FIELD_MASK = [
   'places.id',
   'places.displayName',
+  'places.types',
   'places.rating',
   'places.userRatingCount',
   'places.priceLevel',
