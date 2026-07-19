@@ -1,4 +1,4 @@
-import { GOOGLE_MAPS_API_KEY } from '../env'
+import { routesPost } from '../googleApi'
 import type { TravelProvider, TravelQuery, TravelResult } from './types'
 
 const MODE_MAP: Record<string, string> = {
@@ -17,8 +17,6 @@ export const googleTravelProvider: TravelProvider = {
   name: 'google',
 
   async getTravelTime({ origin, destination, mode, departureTime }: TravelQuery): Promise<TravelResult> {
-    if (!GOOGLE_MAPS_API_KEY) throw new Error('Missing VITE_GOOGLE_MAPS_API_KEY')
-
     const travelMode = MODE_MAP[mode] ?? 'WALK'
 
     const body: Record<string, unknown> = {
@@ -31,15 +29,7 @@ export const googleTravelProvider: TravelProvider = {
       body.departureTime = departureTime.toISOString()
     }
 
-    const res = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
-        'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters',
-      },
-      body: JSON.stringify(body),
-    })
+    const res = await routesPost(body, 'routes.duration,routes.distanceMeters')
 
     if (!res.ok) throw new Error(`Routes API request failed: ${res.status} ${await res.text()}`)
 

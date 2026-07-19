@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { LocationStep } from './components/LocationStep'
 import { PreferencesStep } from './components/PreferencesStep'
 import { OptionsStep } from './components/OptionsStep'
@@ -7,7 +7,7 @@ import { HistoryView } from './components/HistoryView'
 import { buildItineraryOptions, regenerateStop } from './services/itineraryBuilder'
 import { buildICS } from './services/calendar'
 import { downloadTextFile } from './lib/download'
-import { saveItinerary, deleteItinerary, loadItineraries } from './services/storage'
+import { saveItinerary, deleteItinerary, loadItineraries, loadSharedItinerary } from './services/storage'
 import { hasLiveDataSource } from './services/env'
 import type { ItineraryOption, ItineraryRequest, PlaceLocation, SavedItinerary } from './types/domain'
 
@@ -22,8 +22,25 @@ function App() {
   const [fallbackNotice, setFallbackNotice] = useState<string | undefined>(undefined)
   const [regeneratingIndex, setRegeneratingIndex] = useState<number | null>(null)
   const [saved, setSaved] = useState(false)
+  const [savedCloudId, setSavedCloudId] = useState<string | undefined>(undefined)
   const [history, setHistory] = useState<SavedItinerary[]>([])
+  const [historyCloud, setHistoryCloud] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // ?share=<id> links open someone else's saved itinerary directly.
+  useEffect(() => {
+    const shareId = new URLSearchParams(window.location.search).get('share')
+    if (!shareId) return
+    loadSharedItinerary(shareId).then((item) => {
+      if (!item) return
+      setRequest(item.request)
+      setSelected(item.option)
+      setLocation(item.request.location)
+      setSaved(true)
+      setSavedCloudId(item.id)
+      setScreen('final')
+    })
+  }, [])
 
   async function handlePreferencesSubmit(prefs: Omit<ItineraryRequest, 'location'>) {
     if (!location) return
@@ -45,6 +62,7 @@ function App() {
   function handleChooseOption(option: ItineraryOption) {
     setSelected(option)
     setSaved(false)
+    setSavedCloudId(undefined)
     setScreen('final')
   }
 
@@ -55,6 +73,7 @@ function App() {
       const updated = await regenerateStop(request, selected, index)
       setSelected(updated)
       setSaved(false)
+      setSavedCloudId(undefined)
     } finally {
       setRegeneratingIndex(null)
     }
@@ -66,15 +85,24 @@ function App() {
     downloadTextFile(`memorables-${request.date}.ics`, ics)
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!request || !selected) return
-    saveItinerary(request, selected)
     setSaved(true)
+    const result = await saveItinerary(request, selected)
+    setSavedCloudId(result.cloud ? result.itinerary.id : undefined)
   }
 
-  function openHistory() {
-    setHistory(loadItineraries())
+  async function openHistory() {
     setScreen('history')
+    const result = await loadItineraries()
+    setHistory(result.itineraries)
+    setHistoryCloud(result.cloud)
+  }
+
+  async function refreshHistory() {
+    const result = await loadItineraries()
+    setHistory(result.itineraries)
+    setHistoryCloud(result.cloud)
   }
 
   function handleViewSaved(item: SavedItinerary) {
@@ -82,12 +110,13 @@ function App() {
     setSelected(item.option)
     setLocation(item.request.location)
     setSaved(true)
+    setSavedCloudId(item.id)
     setScreen('final')
   }
 
-  function handleDeleteSaved(id: string) {
-    deleteItinerary(id)
-    setHistory(loadItineraries())
+  async function handleDeleteSaved(id: string) {
+    await deleteItinerary(id)
+    await refreshHistory()
   }
 
   function startOver() {
@@ -96,6 +125,7 @@ function App() {
     setOptions([])
     setSelected(null)
     setSaved(false)
+    setSavedCloudId(undefined)
     setError(null)
     setScreen('location')
   }
@@ -147,12 +177,20 @@ function App() {
             onDownloadICS={handleDownloadICS}
             onSave={handleSave}
             saved={saved}
+            savedCloudId={savedCloudId}
             onStartOver={startOver}
           />
         )}
 
         {screen === 'history' && (
-          <HistoryView itineraries={history} onView={handleViewSaved} onDelete={handleDeleteSaved} onBack={() => setScreen(request ? 'final' : 'location')} />
+          <HistoryView
+            itineraries={history}
+            cloud={historyCloud}
+            onView={handleViewSaved}
+            onDelete={handleDeleteSaved}
+            onSyncKeyChanged={refreshHistory}
+            onBack={() => setScreen(request ? 'final' : 'location')}
+          />
         )}
       </main>
     </div>

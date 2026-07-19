@@ -17,7 +17,43 @@ Open the printed local URL. No API key or account is required - it runs
 entirely on realistic mock venue data out of the box (clearly labeled "Demo
 mode" in the UI).
 
-## Going live with real venues
+## Deploying to Vercel (recommended)
+
+The repo is Vercel-ready:
+
+1. Push this branch to GitHub (already done if you're reading this there).
+2. On [vercel.com](https://vercel.com), "Add New Project" -> import the
+   `Memorables` repo. Vercel auto-detects Vite; no build settings needed.
+3. In the project's **Settings -> Environment Variables**, add
+   `GOOGLE_MAPS_API_KEY` (note: **no** `VITE_` prefix) with your Google key.
+4. Deploy. Done - you get a permanent URL that works on your phone,
+   including real geolocation (HTTPS is required for that, which Vercel
+   provides).
+
+In production the key never reaches the browser: the app calls the
+serverless functions in `api/google/*`, which attach the key server-side and
+forward to Google. That means you don't need (and shouldn't set) any
+`VITE_GOOGLE_MAPS_API_KEY` on Vercel.
+
+Saved itineraries sync through Supabase automatically - see "Cloud sync"
+below.
+
+## Cloud sync & sharing
+
+Saved itineraries are stored in a Supabase project. The table has row-level
+security enabled with **no** policies, so the Data API can't touch it; the
+only access path is four `security definer` RPC functions, each requiring an
+unguessable per-user sync key (a UUID minted on first use and kept in
+localStorage - effectively a bearer token).
+
+- **Cross-device sync**: History -> "Sync devices" shows your code; paste it
+  on another device to share one history.
+- **Share links**: after saving, the Share button copies a
+  `?share=<id>` URL anyone can open (read-only view of that one itinerary).
+- **Offline**: if Supabase is unreachable the app falls back to
+  localStorage and says so in the History screen.
+
+## Going live with real venues (local dev)
 
 Copy `.env.example` to `.env.local` and set `VITE_GOOGLE_MAPS_API_KEY` to a
 key with **Places API (New)** and **Routes API** enabled in the Google Cloud
@@ -37,8 +73,10 @@ you'll see a small "showing demo data" notice when that happens.
    few demo cities in mock mode.
 2. **Preferences** - a genre (Romantic, Foodie, Adventure & Outdoors, Culture
    & Arts, Nightlife, Chill & Relax), a date, a start/end time window, how
-   many stops, a travel mode, and how much buffer time to leave between
-   stops.
+   many stops, party size, a budget cap ($-$$$$), a travel mode, and how
+   much buffer time to leave between stops. A free Open-Meteo forecast is
+   shown for the chosen date; if it's rainy enough, outdoor stop types are
+   swapped for indoor ones automatically.
 3. **Building** - each genre maps to an ordered template of stop categories
    (e.g. Romantic/3 stops -> scenic spot, fine dining, dessert). For each
    category the app fetches nearby candidates, then greedily walks the
@@ -93,9 +131,6 @@ know which one is active.
 
 ## Known limitations / natural next steps
 
-- **Persistence is local-only** (browser `localStorage`), so saved
-  itineraries don't sync across devices. A Supabase table would be a
-  straightforward addition if cross-device history matters.
 - **Geocoding free-text search** only works in live mode (it reuses the
   Places API); demo mode is limited to the preset city list.
 - **Single calendar day** - the planner assumes one date within one calendar

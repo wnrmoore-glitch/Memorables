@@ -45,6 +45,7 @@ export interface Venue {
   openingHours: OpeningPeriod[]
   description: string
   source: 'mock' | 'google'
+  photoUrl?: string
 }
 
 export interface Genre {
@@ -70,6 +71,11 @@ export interface ItineraryRequest {
   stopCount: number
   travelMode: TravelMode
   bufferMinutes: number
+  partySize: number
+  /** Highest acceptable price bracket, 1 ($) - 4 ($$$$). */
+  maxPriceLevel: 1 | 2 | 3 | 4
+  /** Set when the forecast is wet - outdoor stop types get swapped for indoor ones. */
+  indoorPreferred?: boolean
 }
 
 export interface TravelSegment {

@@ -30,7 +30,7 @@ function stopDescription(stop: ItineraryStop): string {
       `Getting here: ~${stop.travelFromPrevious.minutes} min ${stop.travelFromPrevious.mode} + ${stop.travelFromPrevious.bufferMinutes} min buffer`
     )
   }
-  const links = getBookingLinks(stop.venue)
+  const links = getBookingLinks(stop.venue, { dateTime: stop.arrival })
   if (links.length) lines.push('Links: ' + links.map((l) => `${l.label} ${l.url}`).join(' | '))
   return lines.join('\n')
 }

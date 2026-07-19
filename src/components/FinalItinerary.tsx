@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { CATEGORY_LABELS } from '../data/genres'
 import { formatClock } from '../lib/time'
 import { getBookingLinks } from '../services/bookingLinks'
@@ -12,6 +13,8 @@ interface FinalItineraryProps {
   onDownloadICS: () => void
   onSave: () => void
   saved: boolean
+  /** Cloud id of the saved itinerary, when it synced - enables the share link. */
+  savedCloudId?: string
   onStartOver: () => void
 }
 
@@ -33,8 +36,19 @@ export function FinalItinerary({
   onDownloadICS,
   onSave,
   saved,
+  savedCloudId,
   onStartOver,
 }: FinalItineraryProps) {
+  const [copied, setCopied] = useState(false)
+
+  function copyShareLink() {
+    if (!savedCloudId) return
+    const url = `${window.location.origin}${window.location.pathname}?share=${savedCloudId}`
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2500)
+    })
+  }
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-start justify-between gap-3">
@@ -75,7 +89,11 @@ export function FinalItinerary({
                 {formatClock(minutesOfDay(stop.arrival))}
               </div>
 
-              <div className="flex-1 rounded-2xl border border-slate-200 p-4 shadow-sm dark:border-slate-700">
+              <div className="flex-1 overflow-hidden rounded-2xl border border-slate-200 shadow-sm dark:border-slate-700">
+                {stop.venue.photoUrl && (
+                  <img src={stop.venue.photoUrl} alt={stop.venue.name} loading="lazy" className="h-36 w-full object-cover" />
+                )}
+                <div className="p-4">
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <span className="text-xs font-medium uppercase tracking-wide text-violet-600">
@@ -106,7 +124,7 @@ export function FinalItinerary({
                 </p>
 
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {getBookingLinks(stop.venue).map((link) => (
+                  {getBookingLinks(stop.venue, { covers: request.partySize, dateTime: stop.arrival }).map((link) => (
                     <a
                       key={link.label}
                       href={link.url}
@@ -130,6 +148,7 @@ export function FinalItinerary({
                     📅 Add to Google Calendar
                   </a>
                 </div>
+                </div>
               </div>
             </div>
           </li>
@@ -152,6 +171,15 @@ export function FinalItinerary({
         >
           {saved ? '✓ Saved' : '☆ Save itinerary'}
         </button>
+        {savedCloudId && (
+          <button
+            type="button"
+            onClick={copyShareLink}
+            className="flex-1 rounded-xl border border-violet-300 px-4 py-3 text-sm font-medium text-violet-700 dark:border-violet-500/50 dark:text-violet-300"
+          >
+            {copied ? '✓ Link copied' : '🔗 Share'}
+          </button>
+        )}
       </div>
 
       <button type="button" onClick={onStartOver} className="self-start text-sm font-medium text-violet-600 hover:underline">

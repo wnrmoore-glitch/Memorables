@@ -46,6 +46,12 @@ const SEARCH_RADIUS_KM: Record<TravelMode, number> = {
   driving: 10,
 }
 
+/** When the forecast is wet, outdoor stop types get swapped for indoor equivalents. */
+const INDOOR_SWAP: Partial<Record<StopCategory, StopCategory>> = {
+  scenic: 'culture',
+  'outdoor-activity': 'relax',
+}
+
 async function candidatesByCategory(
   request: ItineraryRequest,
   categories: StopCategory[]
@@ -63,7 +69,7 @@ async function candidatesByCategory(
         radiusKm: SEARCH_RADIUS_KM[request.travelMode],
       })
       liveByCategory.set(category, result.usedLiveData)
-      byCategory.set(category, result.venues)
+      byCategory.set(category, result.venues.filter((v) => v.priceLevel <= request.maxPriceLevel))
     })
   )
 
@@ -256,7 +262,8 @@ async function buildChain(
 
 export async function buildItineraryOptions(request: ItineraryRequest, optionCount = 3): Promise<BuildResult> {
   const genre = getGenre(request.genreId)
-  const sequence = getSequence(genre, request.stopCount)
+  let sequence = getSequence(genre, request.stopCount)
+  if (request.indoorPreferred) sequence = sequence.map((c) => INDOOR_SWAP[c] ?? c)
   const dateMidnight = dateAtMidnight(request.date)
   const weekday = weekdayOf(request.date)
   const windowStartMin = parseHM(request.window.start)
@@ -303,7 +310,8 @@ export async function regenerateStop(
   stopIndex: number
 ): Promise<ItineraryOption> {
   const genre = getGenre(request.genreId)
-  const sequence = getSequence(genre, request.stopCount)
+  let sequence = getSequence(genre, request.stopCount)
+  if (request.indoorPreferred) sequence = sequence.map((c) => INDOOR_SWAP[c] ?? c)
   const dateMidnight = dateAtMidnight(request.date)
   const weekday = weekdayOf(request.date)
   const windowStartMin = parseHM(request.window.start)

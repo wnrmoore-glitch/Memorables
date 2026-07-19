@@ -1,4 +1,4 @@
-import { GOOGLE_MAPS_API_KEY } from '../env'
+import { photoUrl, placesPost } from '../googleApi'
 import type { OpeningPeriod, Venue } from '../../types/domain'
 import type { PlacesProvider, SearchVenuesParams } from './types'
 
@@ -53,6 +53,7 @@ interface GooglePlace {
   id: string
   displayName?: { text: string }
   types?: string[]
+  photos?: Array<{ name: string }>
   rating?: number
   userRatingCount?: number
   priceLevel?: string
@@ -96,6 +97,7 @@ function toVenue(place: GooglePlace, category: SearchVenuesParams['category']): 
     openingHours: toOpeningHours(place),
     description: place.editorialSummary?.text ?? '',
     source: 'google',
+    photoUrl: place.photos?.[0] ? photoUrl(place.photos[0].name) : undefined,
   }
 }
 
@@ -111,24 +113,18 @@ const FIELD_MASK = [
   'places.websiteUri',
   'places.editorialSummary',
   'places.regularOpeningHours',
+  'places.photos',
 ].join(',')
 
 export const googlePlacesProvider: PlacesProvider = {
   name: 'google',
 
   async searchVenues({ center, category, radiusKm = 4 }: SearchVenuesParams): Promise<Venue[]> {
-    if (!GOOGLE_MAPS_API_KEY) throw new Error('Missing VITE_GOOGLE_MAPS_API_KEY')
-
     const includedTypes = CATEGORY_TYPES[category] ?? []
 
-    const res = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
-        'X-Goog-FieldMask': FIELD_MASK,
-      },
-      body: JSON.stringify({
+    const res = await placesPost(
+      'searchNearby',
+      {
         includedTypes,
         maxResultCount: 12,
         locationRestriction: {
@@ -137,8 +133,9 @@ export const googlePlacesProvider: PlacesProvider = {
             radius: radiusKm * 1000,
           },
         },
-      }),
-    })
+      },
+      FIELD_MASK
+    )
 
     if (!res.ok) {
       throw new Error(`Places API request failed: ${res.status} ${await res.text()}`)
@@ -158,17 +155,11 @@ export const googlePlacesProvider: PlacesProvider = {
 
 /** Resolves free-text location input (e.g. "Shoreditch, London") to coordinates via Places Text Search. */
 export async function geocodeViaGooglePlaces(query: string): Promise<{ lat: number; lng: number; label: string } | null> {
-  if (!GOOGLE_MAPS_API_KEY) throw new Error('Missing VITE_GOOGLE_MAPS_API_KEY')
-
-  const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
-      'X-Goog-FieldMask': 'places.location,places.formattedAddress,places.displayName',
-    },
-    body: JSON.stringify({ textQuery: query, pageSize: 1 }),
-  })
+  const res = await placesPost(
+    'searchText',
+    { textQuery: query, pageSize: 1 },
+    'places.location,places.formattedAddress,places.displayName'
+  )
 
   if (!res.ok) throw new Error(`Places text search failed: ${res.status}`)
 

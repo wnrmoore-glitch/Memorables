@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { format } from 'date-fns'
 import { GENRES } from '../data/genres'
+import { getDayForecast, type DayForecast } from '../services/weather'
 import type { ItineraryRequest, PlaceLocation, TravelMode } from '../types/domain'
 
 interface PreferencesStepProps {
@@ -23,6 +24,20 @@ export function PreferencesStep({ location, onChangeLocation, onSubmit }: Prefer
   const [stopCount, setStopCount] = useState(3)
   const [travelMode, setTravelMode] = useState<TravelMode>('walking')
   const [bufferMinutes, setBufferMinutes] = useState(15)
+  const [partySize, setPartySize] = useState(2)
+  const [maxPriceLevel, setMaxPriceLevel] = useState<1 | 2 | 3 | 4>(4)
+  const [forecast, setForecast] = useState<DayForecast | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setForecast(null)
+    getDayForecast(location, date).then((f) => {
+      if (!cancelled) setForecast(f)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [location, date])
 
   function handleSubmit() {
     onSubmit({
@@ -32,6 +47,9 @@ export function PreferencesStep({ location, onChangeLocation, onSubmit }: Prefer
       stopCount,
       travelMode,
       bufferMinutes,
+      partySize,
+      maxPriceLevel,
+      indoorPreferred: forecast?.suggestIndoor ?? false,
     })
   }
 
@@ -116,7 +134,58 @@ export function PreferencesStep({ location, onChangeLocation, onSubmit }: Prefer
             className="rounded-lg border border-slate-300 px-3 py-2 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
           />
         </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700 dark:text-slate-300">Party size</span>
+          <div className="flex gap-1.5">
+            {[2, 3, 4, 6].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setPartySize(n)}
+                className={`flex-1 rounded-lg border py-2 font-medium ${
+                  partySize === n
+                    ? 'border-violet-500 bg-violet-50 text-violet-700 dark:bg-violet-500/10'
+                    : 'border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300'
+                }`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700 dark:text-slate-300">Budget</span>
+          <div className="flex gap-1.5">
+            {([1, 2, 3, 4] as const).map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setMaxPriceLevel(n)}
+                className={`flex-1 rounded-lg border py-2 text-xs font-medium ${
+                  maxPriceLevel === n
+                    ? 'border-violet-500 bg-violet-50 text-violet-700 dark:bg-violet-500/10'
+                    : 'border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300'
+                }`}
+              >
+                {'$'.repeat(n)}
+              </button>
+            ))}
+          </div>
+        </label>
       </section>
+
+      {forecast && (
+        <div
+          className={`rounded-xl px-4 py-3 text-sm ${
+            forecast.suggestIndoor
+              ? 'bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300'
+              : 'bg-sky-50 text-sky-800 dark:bg-sky-500/10 dark:text-sky-300'
+          }`}
+        >
+          {forecast.emoji} {forecast.summary}, {forecast.maxTempC}°C · {forecast.precipitationChance}% chance of rain
+          {forecast.suggestIndoor && ' — outdoor stops will be swapped for indoor ones.'}
+        </div>
+      )}
 
       <section>
         <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-300">Getting around</h3>
